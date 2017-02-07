@@ -1,0 +1,149 @@
+unit unNBS;
+
+interface
+
+uses Classes, SysUtils, Variants, ActiveX,
+     MSHTML, IdHTTP;
+
+type
+
+  TNBSPodaci = record
+    naziv: String;
+    adresa: String;
+    racun: String;
+    mesto: String;
+    status: String;
+    opstina: String;
+    delatnost: String;
+    pib: String;
+  end;
+
+function NBSPretraga(maticniBroj: String): TNBSPodaci;
+
+implementation
+
+function NasaSlova(tekst: String): String;
+begin
+  Result := StringReplace(tekst, 'ƒç', 'Ë', [rfReplaceAll]);
+  Result := StringReplace(Result, '&nbsp;', '', [rfReplaceAll]);
+  Result := StringReplace(Result, '≈æ', 'û', [rfReplaceAll]);
+  Result := StringReplace(Result, '≈', 'ä', [rfReplaceAll]);
+end;
+
+function findChildByTagName(node: IHTMLElement; tagName: String): IHTMLElement;
+var i: Integer;
+    htmlElement: IHTMLElement;
+begin
+  if node = nil then
+    Result := nil
+  else
+  begin
+    if node.tagName = UpperCase(tagName) then
+      Result := node
+    else
+      for i := 0 to IHtmlElementCollection(node.children).length - 1 do
+      begin
+        htmlElement := IHtmlElementCollection(node.children).item(i, EmptyParam) as IHTMLElement;
+        Result := findChildByTagName(htmlElement, tagName);
+        if Result <> nil then
+          Exit;
+      end;
+  end;
+end;
+
+procedure ExtractAddressAndAccount(htmlTR: IHTMLElement;
+  var address, account: String);
+begin
+  address := (IHtmlElementCollection(htmlTR.children).item(1, EmptyParam) as  IHTMLElement).innerHTML;
+  account := (IHtmlElementCollection( (IHtmlElementCollection(htmlTR.children).item(3, EmptyParam) as  IHTMLElement).children).item(0, EmptyParam) as IHTMLElement).innerHTML;
+
+  address := NasaSlova(address);
+  account := NasaSlova(account);
+end;
+
+procedure ExtractCityAndStatus(htmlTR: IHTMLElement; var city,
+  status: String);
+begin
+  city := (IHtmlElementCollection(htmlTR.children).item(1, EmptyParam) as  IHTMLElement).innerHTML;
+  status := (IHtmlElementCollection((IHtmlElementCollection((IHtmlElementCollection(htmlTR.children).item(3, EmptyParam) as  IHTMLElement).children).item(1, EmptyParam) as IHTMLElement).children).item(0, EmptyParam) as IHTMLElement).innerHTML;
+
+  city := NasaSlova(city);
+  status := NasaSlova(status);
+end;
+
+procedure ExtractMunicipality(htmlTR: IHTMLElement;
+  var municipality: String);
+begin
+  municipality := (IHtmlElementCollection(htmlTR.children).item(1, EmptyParam) as  IHTMLElement).innerHTML;
+  municipality := NasaSlova(municipality);
+end;
+
+procedure ExtractDelatnostAndPib(htmlTR: IHTMLElement;
+  var delatnost, pib: String);
+begin
+  delatnost := (IHtmlElementCollection(htmlTR.children).item(1, EmptyParam) as  IHTMLElement).innerHTML;
+  pib := (IHtmlElementCollection(htmlTR.children).item(3, EmptyParam) as  IHTMLElement).innerHTML;
+
+  delatnost := NasaSlova(delatnost);
+  pib := NasaSlova(pib);
+end;
+
+function NBSPretraga(maticniBroj: String): TNBSPodaci;
+var lParamList: TStringList;
+    lHTTP: TIdHTTP;
+    Doc: IHTMLDocument2;
+    V: OleVariant;
+    i: Integer;
+    j: Integer;
+    htmlElement: IHTMLElement;
+    htmlForm: IHTMLElement;
+    htmlA: IHTMLElement;
+    htmlTableBody: IHTMLElement;
+begin
+  lParamList := TStringList.Create;
+  lParamList.Add('sifban=');
+  lParamList.Add('partija=');
+  lParamList.Add('kontbr=');
+  lParamList.Add('matbr=' + maticniBroj);
+  lParamList.Add('pib=');
+  lParamList.Add('korisnik=');
+  lParamList.Add('mesto=');
+  lParamList.Add('tip_racuna=1');
+  lParamList.Add('rezident=1');
+  lParamList.Add('Submit=Pretra%C5%BEi');
+
+  lHTTP := TIdHTTP.Create(nil);
+  lHTTP.Request.CustomHeaders.Add('Content-Type=application/x-www-form-urlencoded');
+  try
+    Doc := coHTMLDocument.Create as IHTMLDocument2; // create IHTMLDocument2 instance
+    V := VarArrayCreate([0,0], varVariant);
+    V[0] := lHTTP.Post('http://www.nbs.rs/rir_pn/pn_rir.html.jsp?type=rir_results&lang=SER_CIR&konverzija=yes', lParamList);
+    Doc.Write(PSafeArray(TVarData(v).VArray)); // write data from IdHTTP
+    for i := 0 to Doc.all.length - 1 do
+    begin
+      htmlElement := Doc.all.item(i, EmptyParam) as IHTMLElement;
+      if htmlElement.getAttribute('id',0) = 'result' then
+      begin
+        htmlForm := findChildByTagName(htmlElement, 'form');
+        if htmlForm <> nil then
+        begin
+          htmlA := findChildByTagName(htmlForm, 'a');
+          Result.naziv := NasaSlova(htmlA.innerHTML);
+        end;
+        htmlTableBody := IHtmlElementCollection(htmlElement.children).item(0, EmptyParam) as IHTMLElement;
+        for j := 0 to IHtmlElementCollection(htmlTableBody.children).length - 1 do
+        begin
+          if j = 2 then ExtractAddressAndAccount(IHtmlElementCollection(htmlTableBody.children).item(j, EmptyParam) as IHTMLElement, Result.adresa, Result.racun);
+          if j = 3 then ExtractCityAndStatus(IHtmlElementCollection(htmlTableBody.children).item(j, EmptyParam) as IHTMLElement, Result.mesto, Result.status);
+          if j = 4 then ExtractMunicipality(IHtmlElementCollection(htmlTableBody.children).item(j, EmptyParam) as IHTMLElement, Result.opstina);
+          if j = 5 then ExtractDelatnostAndPib(IHtmlElementCollection(htmlTableBody.children).item(j, EmptyParam) as IHTMLElement, Result.delatnost, Result.pib);
+        end;
+      end;
+    end;
+  finally
+    lHTTP.Free;
+    lParamList.Free;
+  end;
+end;
+
+end.
