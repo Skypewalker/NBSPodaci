@@ -18,7 +18,7 @@ type
     pib: String;
   end;
 
-function NBSPretraga(maticniBroj: String): TNBSPodaci;
+function NBSPretraga(maticniBroj: String; rezidenti: Boolean = true): TNBSPodaci;
 
 implementation
 
@@ -88,7 +88,7 @@ begin
   pib := NasaSlova(pib);
 end;
 
-function NBSPretraga(maticniBroj: String): TNBSPodaci;
+function NBSPretraga(maticniBroj: String; rezidenti: Boolean = true): TNBSPodaci;
 var lParamList: TStringList;
     lHTTP: TIdHTTP;
     Doc: IHTMLDocument2;
@@ -109,13 +109,26 @@ begin
   lParamList.Add('korisnik=');
   lParamList.Add('mesto=');
   lParamList.Add('tip_racuna=1');
-  lParamList.Add('rezident=1');
+  if rezidenti then
+    lParamList.Add('rezident=1')
+  else
+    lParamList.Add('rezident=0');
   lParamList.Add('Submit=Pretra%C5%BEi');
 
+  Result.naziv := '';
+  Result.adresa := '';
+  Result.racun := '';
+  Result.mesto := '';
+  Result.status := '';
+  Result.opstina := '';
+  Result.delatnost := '';
+  Result.PIB := '';
+  
   lHTTP := TIdHTTP.Create(nil);
   lHTTP.Request.CustomHeaders.Add('Content-Type=application/x-www-form-urlencoded');
   try
     Doc := coHTMLDocument.Create as IHTMLDocument2; // create IHTMLDocument2 instance
+    Doc.Clear;
     V := VarArrayCreate([0,0], varVariant);
     V[0] := lHTTP.Post('http://www.nbs.rs/rir_pn/pn_rir.html.jsp?type=rir_results&lang=SER_CIR&konverzija=yes', lParamList);
     Doc.Write(PSafeArray(TVarData(v).VArray)); // write data from IdHTTP
